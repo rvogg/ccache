@@ -796,7 +796,8 @@ Examples:
 +
 * `file:///shared/nfs/directory`
 * `file:///shared/nfs/one|read-only file:///shared/nfs/two`
-* `http://example.org/cache`
+* `http://example.com/cache`
+* `redis://example.com`
 
 [[config_sloppiness]] *sloppiness* (*CCACHE_SLOPPINESS*)::
 
@@ -936,22 +937,43 @@ Optional attributes:
 
 URL format: `http://HOST[:PORT][/PATH]`
 
-This backend stores data in an HTTP compatible server. The required HTTP
-methods are `GET`, `PUT` and `DELETE`.
+This backend stores data in an HTTP-compatible server. The required HTTP methods
+are `GET`, `PUT` and `DELETE`.
 
 Note that ccache will not perform any cleanup of the HTTP storage.
 
 Examples:
 
 * `http://localhost:8080/`
-* `http://example.org/cache`
+* `http://example.com/cache`
 
 Known issues and limitations:
 
-* URLs containing IPv6 addresses like `http://[::1]/` are not supported
-* There are no HTTP timeouts implemented or configured
-* Authentication is not yet supported
-* HTTPS is not yet supported
+* There are no HTTP timeouts implemented or configured.
+* Authentication is not yet supported.
+* HTTPS is not yet supported.
+* URLs containing IPv6 addresses like `http://[::1]/` are not supported.
+
+=== Redis storage backend
+
+URL format: `redis://[[USERNAME:]PASSWORD@]HOST[:PORT][/DBNUMBER]`
+
+This backend stores data in a https://redis.io[Redis] (or Redis-compatible)
+server. There are implementations for both memory-based and disk-based storage.
+*PORT* defaults to *6379* and *DBNUMBER* defaults to *0*.
+
+Note that ccache will not perform any cleanup of the Redis storage, but you can
+https://redis.io/topics/lru-cache[configure LRU eviction].
+
+Examples:
+
+* `redis://localhost`
+* `redis://p4ssw0rd@cache.example.com:6379/0|connect-timeout=50`
+
+Optional attributes:
+
+* *connect-timeout*: Timeout (in ms) for network connection. The default is 100.
+* *operation-timeout*: Timeout (in ms) for Redis commands. The default is 10000.
 
 == Cache size management
 

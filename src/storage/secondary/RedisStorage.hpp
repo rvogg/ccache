@@ -18,20 +18,21 @@
 
 #pragma once
 
-#include <storage/SecondaryStorage.hpp>
-#include <storage/types.hpp>
+#include "storage/SecondaryStorage.hpp"
+#include "storage/types.hpp"
 
 #include <third_party/url.hpp>
 
-#include <sys/stat.h> // for mode_t
+struct redisContext;
 
 namespace storage {
 namespace secondary {
 
-class FileStorage : public SecondaryStorage
+class RedisStorage : public storage::SecondaryStorage
 {
 public:
-  FileStorage(const Url& url, const AttributeMap& attributes);
+  RedisStorage(const Url& url, const AttributeMap& attributes);
+  ~RedisStorage();
 
   nonstd::expected<nonstd::optional<std::string>, Error>
   get(const Digest& key) override;
@@ -41,11 +42,17 @@ public:
   nonstd::expected<bool, Error> remove(const Digest& key) override;
 
 private:
-  const std::string m_dir;
-  const nonstd::optional<mode_t> m_umask;
-  const bool m_update_mtime;
+  Url m_url;
+  std::string m_prefix;
+  redisContext* m_context;
+  const uint64_t m_connect_timeout;
+  const uint64_t m_operation_timeout;
+  bool m_connected;
+  bool m_invalid;
 
-  std::string get_entry_path(const Digest& key) const;
+  int connect();
+  int auth();
+  std::string get_key_string(const Digest& digest) const;
 };
 
 } // namespace secondary
