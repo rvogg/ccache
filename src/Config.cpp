@@ -19,17 +19,18 @@
 #include "Config.hpp"
 
 #include "AtomicFile.hpp"
-#include "Compression.hpp"
 #include "MiniTrace.hpp"
-#include "Sloppiness.hpp"
 #include "Util.hpp"
 #include "assertions.hpp"
-#include "exceptions.hpp"
 #include "fmtmacros.hpp"
 
+#include <UmaskScope.hpp>
+#include <compression/types.hpp>
+#include <core/exceptions.hpp>
 #include <core/wincompat.hpp>
-#include <util/path_utils.hpp>
-#include <util/string_utils.hpp>
+#include <util/expected.hpp>
+#include <util/path.hpp>
+#include <util/string.hpp>
 
 #include "third_party/fmt/core.h"
 
@@ -204,7 +205,7 @@ parse_bool(const std::string& value,
     std::string lower_value = Util::to_lowercase(value);
     if (value == "0" || lower_value == "false" || lower_value == "disable"
         || lower_value == "no") {
-      throw Error(
+      throw core::Error(
         "invalid boolean environment variable value \"{}\" (did you mean to"
         " set \"CCACHE_{}{}=true\"?)",
         value,
@@ -217,7 +218,7 @@ parse_bool(const std::string& value,
   } else if (value == "false") {
     return false;
   } else {
-    throw Error("not a boolean value: \"{}\"", value);
+    throw core::Error("not a boolean value: \"{}\"", value);
   }
 }
 
@@ -235,10 +236,10 @@ parse_double(const std::string& value)
   try {
     result = std::stod(value, &end);
   } catch (std::exception& e) {
-    throw Error(e.what());
+    throw core::Error(e.what());
   }
   if (end != value.size()) {
-    throw Error("invalid floating point: \"{}\"", value);
+    throw core::Error("invalid floating point: \"{}\"", value);
   }
   return result;
 }
@@ -268,38 +269,38 @@ parse_compiler_type(const std::string& value)
   }
 }
 
-uint32_t
+core::Sloppiness
 parse_sloppiness(const std::string& value)
 {
   size_t start = 0;
   size_t end = 0;
-  uint32_t result = 0;
+  core::Sloppiness result;
   while (end != std::string::npos) {
     end = value.find_first_of(", ", start);
     std::string token =
-      Util::strip_whitespace(value.substr(start, end - start));
+      util::strip_whitespace(value.substr(start, end - start));
     if (token == "file_stat_matches") {
-      result |= SLOPPY_FILE_STAT_MATCHES;
+      result.enable(core::Sloppy::file_stat_matches);
     } else if (token == "file_stat_matches_ctime") {
-      result |= SLOPPY_FILE_STAT_MATCHES_CTIME;
+      result.enable(core::Sloppy::file_stat_matches_ctime);
     } else if (token == "include_file_ctime") {
-      result |= SLOPPY_INCLUDE_FILE_CTIME;
+      result.enable(core::Sloppy::include_file_ctime);
     } else if (token == "include_file_mtime") {
-      result |= SLOPPY_INCLUDE_FILE_MTIME;
+      result.enable(core::Sloppy::include_file_mtime);
     } else if (token == "system_headers" || token == "no_system_headers") {
-      result |= SLOPPY_SYSTEM_HEADERS;
+      result.enable(core::Sloppy::system_headers);
     } else if (token == "pch_defines") {
-      result |= SLOPPY_PCH_DEFINES;
+      result.enable(core::Sloppy::pch_defines);
     } else if (token == "time_macros") {
-      result |= SLOPPY_TIME_MACROS;
+      result.enable(core::Sloppy::time_macros);
     } else if (token == "clang_index_store") {
-      result |= SLOPPY_CLANG_INDEX_STORE;
+      result.enable(core::Sloppy::clang_index_store);
     } else if (token == "locale") {
-      result |= SLOPPY_LOCALE;
+      result.enable(core::Sloppy::locale);
     } else if (token == "modules") {
-      result |= SLOPPY_MODULES;
+      result.enable(core::Sloppy::modules);
     } else if (token == "ivfsoverlay") {
-      result |= SLOPPY_IVFSOVERLAY;
+      result.enable(core::Sloppy::ivfsoverlay);
     } // else: ignore unknown value for forward compatibility
     start = value.find_first_not_of(", ", end);
   }
@@ -307,40 +308,40 @@ parse_sloppiness(const std::string& value)
 }
 
 std::string
-format_sloppiness(uint32_t sloppiness)
+format_sloppiness(core::Sloppiness sloppiness)
 {
   std::string result;
-  if (sloppiness & SLOPPY_INCLUDE_FILE_MTIME) {
+  if (sloppiness.is_enabled(core::Sloppy::include_file_mtime)) {
     result += "include_file_mtime, ";
   }
-  if (sloppiness & SLOPPY_INCLUDE_FILE_CTIME) {
+  if (sloppiness.is_enabled(core::Sloppy::include_file_ctime)) {
     result += "include_file_ctime, ";
   }
-  if (sloppiness & SLOPPY_TIME_MACROS) {
+  if (sloppiness.is_enabled(core::Sloppy::time_macros)) {
     result += "time_macros, ";
   }
-  if (sloppiness & SLOPPY_PCH_DEFINES) {
+  if (sloppiness.is_enabled(core::Sloppy::pch_defines)) {
     result += "pch_defines, ";
   }
-  if (sloppiness & SLOPPY_FILE_STAT_MATCHES) {
+  if (sloppiness.is_enabled(core::Sloppy::file_stat_matches)) {
     result += "file_stat_matches, ";
   }
-  if (sloppiness & SLOPPY_FILE_STAT_MATCHES_CTIME) {
+  if (sloppiness.is_enabled(core::Sloppy::file_stat_matches_ctime)) {
     result += "file_stat_matches_ctime, ";
   }
-  if (sloppiness & SLOPPY_SYSTEM_HEADERS) {
+  if (sloppiness.is_enabled(core::Sloppy::system_headers)) {
     result += "system_headers, ";
   }
-  if (sloppiness & SLOPPY_CLANG_INDEX_STORE) {
+  if (sloppiness.is_enabled(core::Sloppy::clang_index_store)) {
     result += "clang_index_store, ";
   }
-  if (sloppiness & SLOPPY_LOCALE) {
+  if (sloppiness.is_enabled(core::Sloppy::locale)) {
     result += "locale, ";
   }
-  if (sloppiness & SLOPPY_MODULES) {
+  if (sloppiness.is_enabled(core::Sloppy::modules)) {
     result += "modules, ";
   }
-  if (sloppiness & SLOPPY_IVFSOVERLAY) {
+  if (sloppiness.is_enabled(core::Sloppy::ivfsoverlay)) {
     result += "ivfsoverlay, ";
   }
   if (!result.empty()) {
@@ -364,7 +365,7 @@ void
 verify_absolute_path(const std::string& value)
 {
   if (!util::is_absolute_path(value)) {
-    throw Error("not an absolute path: \"{}\"", value);
+    throw core::Error("not an absolute path: \"{}\"", value);
   }
 }
 
@@ -374,7 +375,7 @@ parse_line(const std::string& line,
            std::string* value,
            std::string* error_message)
 {
-  std::string stripped_line = Util::strip_whitespace(line);
+  std::string stripped_line = util::strip_whitespace(line);
   if (stripped_line.empty() || stripped_line[0] == '#') {
     return true;
   }
@@ -385,8 +386,8 @@ parse_line(const std::string& line,
   }
   *key = stripped_line.substr(0, equal_pos);
   *value = stripped_line.substr(equal_pos + 1);
-  *key = Util::strip_whitespace(*key);
-  *value = Util::strip_whitespace(*value);
+  *key = util::strip_whitespace(*key);
+  *value = util::strip_whitespace(*value);
   return true;
 }
 
@@ -416,11 +417,11 @@ parse_config_file(const std::string& path,
       std::string value;
       std::string error_message;
       if (!parse_line(line, &key, &value, &error_message)) {
-        throw Error(error_message);
+        throw core::Error(error_message);
       }
       config_line_handler(line, key, value);
-    } catch (const Error& e) {
-      throw Error("{}:{}: {}", path, line_number, e.what());
+    } catch (const core::Error& e) {
+      throw core::Error("{}:{}: {}", path, line_number, e.what());
     }
   }
   return true;
@@ -587,7 +588,7 @@ Config::update_from_environment()
   for (char** env = environ; *env; ++env) {
     std::string setting = *env;
     const std::string prefix = "CCACHE_";
-    if (!Util::starts_with(setting, prefix)) {
+    if (!util::starts_with(setting, prefix)) {
       continue;
     }
     size_t equal_pos = setting.find('=');
@@ -597,7 +598,7 @@ Config::update_from_environment()
 
     std::string key = setting.substr(prefix.size(), equal_pos - prefix.size());
     std::string value = setting.substr(equal_pos + 1);
-    bool negate = Util::starts_with(key, "NO");
+    bool negate = util::starts_with(key, "NO");
     if (negate) {
       key = key.substr(2);
     }
@@ -611,8 +612,8 @@ Config::update_from_environment()
 
     try {
       set_item(config_key, value, key, negate, "environment");
-    } catch (const Error& e) {
-      throw Error("CCACHE_{}{}: {}", negate ? "NO" : "", key, e.what());
+    } catch (const core::Error& e) {
+      throw core::Error("CCACHE_{}{}: {}", negate ? "NO" : "", key, e.what());
     }
   }
 }
@@ -622,7 +623,7 @@ Config::get_string_value(const std::string& key) const
 {
   auto it = k_config_key_table.find(key);
   if (it == k_config_key_table.end()) {
-    throw Error("unknown configuration option \"{}\"", key);
+    throw core::Error("unknown configuration option \"{}\"", key);
   }
 
   switch (it->second) {
@@ -753,10 +754,12 @@ Config::get_string_value(const std::string& key) const
 void
 Config::set_value_in_file(const std::string& path,
                           const std::string& key,
-                          const std::string& value)
+                          const std::string& value) const
 {
+  UmaskScope umask_scope(m_umask);
+
   if (k_config_key_table.find(key) == k_config_key_table.end()) {
-    throw Error("unknown configuration option \"{}\"", key);
+    throw core::Error("unknown configuration option \"{}\"", key);
   }
 
   // Verify that the value is valid; set_item will throw if not.
@@ -769,8 +772,8 @@ Config::set_value_in_file(const std::string& path,
     Util::ensure_dir_exists(Util::dir_name(resolved_path));
     try {
       Util::write_file(resolved_path, "");
-    } catch (const Error& e) {
-      throw Error("failed to write to {}: {}", resolved_path, e.what());
+    } catch (const core::Error& e) {
+      throw core::Error("failed to write to {}: {}", resolved_path, e.what());
     }
   }
 
@@ -787,7 +790,7 @@ Config::set_value_in_file(const std::string& path,
             output.write(FMT("{}\n", c_line));
           }
         })) {
-    throw Error("failed to open {}: {}", path, strerror(errno));
+    throw core::Error("failed to open {}: {}", path, strerror(errno));
   }
 
   if (!found) {
@@ -860,11 +863,10 @@ Config::set_item(const std::string& key,
     m_compression = parse_bool(value, env_var_key, negate);
     break;
 
-  case ConfigItem::compression_level: {
-    m_compression_level =
-      Util::parse_signed(value, INT8_MIN, INT8_MAX, "compression_level");
+  case ConfigItem::compression_level:
+    m_compression_level = util::value_or_throw<core::Error>(
+      util::parse_signed(value, INT8_MIN, INT8_MAX, "compression_level"));
     break;
-  }
 
   case ConfigItem::cpp_extension:
     m_cpp_extension = value;
@@ -931,7 +933,8 @@ Config::set_item(const std::string& key,
     break;
 
   case ConfigItem::max_files:
-    m_max_files = Util::parse_unsigned(value, nullopt, nullopt, "max_files");
+    m_max_files = util::value_or_throw<core::Error>(
+      util::parse_unsigned(value, nullopt, nullopt, "max_files"));
     break;
 
   case ConfigItem::max_size:
@@ -995,7 +998,7 @@ Config::set_item(const std::string& key,
     if (!value.empty()) {
       const auto umask = util::parse_umask(value);
       if (!umask) {
-        throw Error(umask.error());
+        throw core::Error(umask.error());
       }
       m_umask = *umask;
     }
@@ -1010,7 +1013,7 @@ Config::check_key_tables_consistency()
 {
   for (const auto& item : k_env_variable_table) {
     if (k_config_key_table.find(item.second) == k_config_key_table.end()) {
-      throw Error(
+      throw core::Error(
         "env var {} mapped to {} which is missing from k_config_key_table",
         item.first,
         item.second);

@@ -18,21 +18,24 @@
 
 #pragma once
 
-#include "types.hpp"
-
 #include <core/types.hpp>
-#include <storage/SecondaryStorage.hpp>
 #include <storage/primary/PrimaryStorage.hpp>
+#include <storage/types.hpp>
 
 #include <third_party/nonstd/optional.hpp>
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 class Digest;
 
 namespace storage {
+
+std::string get_features();
+
+struct SecondaryStorageEntry;
 
 class Storage
 {
@@ -43,7 +46,7 @@ public:
   void initialize();
   void finalize();
 
-  primary::PrimaryStorage& primary();
+  primary::PrimaryStorage primary;
 
   // Returns a path to a file containing the value.
   nonstd::optional<std::string> get(const Digest& key,
@@ -51,24 +54,21 @@ public:
 
   bool put(const Digest& key,
            core::CacheEntryType type,
-           const storage::CacheEntryWriter& entry_writer);
+           const storage::EntryWriter& entry_writer);
 
   void remove(const Digest& key, core::CacheEntryType type);
 
-private:
-  struct SecondaryStorageEntry
-  {
-    std::unique_ptr<storage::SecondaryStorage> backend;
-    std::string url; // the Url class has a too-chatty stream operator
-    bool read_only = false;
-  };
+  std::string get_secondary_storage_config_for_logging() const;
 
+private:
   const Config& m_config;
-  primary::PrimaryStorage m_primary_storage;
-  std::vector<SecondaryStorageEntry> m_secondary_storages;
+  std::vector<std::unique_ptr<SecondaryStorageEntry>> m_secondary_storages;
   std::vector<std::string> m_tmp_files;
 
   void add_secondary_storages();
+  nonstd::optional<std::string> get_from_secondary_storage(const Digest& key);
+  void put_in_secondary_storage(const Digest& key, const std::string& value);
+  void remove_from_secondary_storage(const Digest& key);
 };
 
 } // namespace storage

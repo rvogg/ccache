@@ -9,8 +9,11 @@ RUN apt-get update \
         cmake \
         elfutils \
         gcc-multilib \
+        libhiredis-dev \
         libzstd-dev \
-        xsltproc \
+        python3 \
+        redis-server \
+        redis-tools \
  && rm -rf /var/lib/apt/lists/*
 
 # Redirect all compilers to ccache.

@@ -20,10 +20,11 @@
 
 #include <Digest.hpp>
 #include <Logging.hpp>
-#include <Util.hpp>
 #include <ccache.hpp>
-#include <exceptions.hpp>
+#include <core/exceptions.hpp>
 #include <fmtmacros.hpp>
+#include <util/expected.hpp>
+#include <util/string.hpp>
 
 #include <third_party/httplib.h>
 #include <third_party/nonstd/string_view.hpp>
@@ -34,54 +35,26 @@ namespace secondary {
 
 namespace {
 
-nonstd::string_view
-to_string(const httplib::Error error)
+class HttpStorageBackend : public SecondaryStorage::Backend
 {
-  using httplib::Error;
+public:
+  HttpStorageBackend(const Params& params);
 
-  switch (error) {
-  case Error::Success:
-    return "Success";
-  case Error::Connection:
-    return "Connection";
-  case Error::BindIPAddress:
-    return "BindIPAddress";
-  case Error::Read:
-    return "Read";
-  case Error::Write:
-    return "Write";
-  case Error::ExceedRedirectCount:
-    return "ExceedRedirectCount";
-  case Error::Canceled:
-    return "Canceled";
-  case Error::SSLConnection:
-    return "SSLConnection";
-  case Error::SSLLoadingCerts:
-    return "SSLLoadingCerts";
-  case Error::SSLServerVerification:
-    return "SSLServerVerification";
-  case Error::UnsupportedMultipartBoundaryChars:
-    return "UnsupportedMultipartBoundaryChars";
-  case Error::Compression:
-    return "Compression";
-  case Error::Unknown:
-    break;
-  }
+  nonstd::expected<nonstd::optional<std::string>, Failure>
+  get(const Digest& key) override;
 
-  return "Unknown";
-}
+  nonstd::expected<bool, Failure> put(const Digest& key,
+                                      const std::string& value,
+                                      bool only_if_missing) override;
 
-int
-get_url_port(const Url& url)
-{
-  if (!url.port().empty()) {
-    return Util::parse_unsigned(url.port(), 1, 65535, "port");
-  } else if (url.scheme() == "http") {
-    return 80;
-  } else {
-    throw Error("Unknown scheme: {}", url.scheme());
-  }
-}
+  nonstd::expected<bool, Failure> remove(const Digest& key) override;
+
+private:
+  const std::string m_url_path;
+  httplib::Client m_http_client;
+
+  std::string get_entry_path(const Digest& key) const;
+};
 
 std::string
 get_url_path(const Url& url)
@@ -93,32 +66,80 @@ get_url_path(const Url& url)
   return path;
 }
 
-} // namespace
-
-HttpStorage::HttpStorage(const Url& url, const AttributeMap&)
-  : m_url_path(get_url_path(url)),
-    m_http_client(
-      std::make_unique<httplib::Client>(url.host(), get_url_port(url)))
+Url
+get_partial_url(const Url& from_url)
 {
-  m_http_client->set_default_headers(
-    {{"User-Agent", FMT("{}/{}", CCACHE_NAME, CCACHE_VERSION)}});
-  m_http_client->set_keep_alive(true);
+  Url url;
+  url.scheme(from_url.scheme());
+  url.host(from_url.host(), from_url.ip_version());
+  if (!from_url.port().empty()) {
+    url.port(from_url.port());
+  }
+  return url;
 }
 
-HttpStorage::~HttpStorage() = default;
+std::string
+get_url(const Url& url)
+{
+  if (url.host().empty()) {
+    throw core::Fatal("A host is required in HTTP storage URL \"{}\"",
+                      url.str());
+  }
 
-nonstd::expected<nonstd::optional<std::string>, SecondaryStorage::Error>
-HttpStorage::get(const Digest& key)
+  // httplib requires a partial URL with just scheme, host and port.
+  return get_partial_url(url).str();
+}
+
+HttpStorageBackend::HttpStorageBackend(const Params& params)
+  : m_url_path(get_url_path(params.url)),
+    m_http_client(get_url(params.url))
+{
+  if (!params.url.user_info().empty()) {
+    const auto pair = util::split_once(params.url.user_info(), ':');
+    if (!pair.second) {
+      throw core::Fatal("Expected username:password in URL but got \"{}\"",
+                        params.url.user_info());
+    }
+    m_http_client.set_basic_auth(std::string(pair.first).c_str(),
+                                 std::string(*pair.second).c_str());
+  }
+
+  m_http_client.set_default_headers({
+    {"User-Agent", FMT("{}/{}", CCACHE_NAME, CCACHE_VERSION)},
+  });
+  m_http_client.set_keep_alive(true);
+
+  auto connect_timeout = k_default_connect_timeout;
+  auto operation_timeout = k_default_operation_timeout;
+
+  for (const auto& attr : params.attributes) {
+    if (attr.key == "connect-timeout") {
+      connect_timeout = parse_timeout_attribute(attr.value);
+    } else if (attr.key == "operation-timeout") {
+      operation_timeout = parse_timeout_attribute(attr.value);
+    } else if (!is_framework_attribute(attr.key)) {
+      LOG("Unknown attribute: {}", attr.key);
+    }
+  }
+
+  m_http_client.set_connection_timeout(connect_timeout);
+  m_http_client.set_read_timeout(operation_timeout);
+  m_http_client.set_write_timeout(operation_timeout);
+}
+
+nonstd::expected<nonstd::optional<std::string>,
+                 SecondaryStorage::Backend::Failure>
+HttpStorageBackend::get(const Digest& key)
 {
   const auto url_path = get_entry_path(key);
-  const auto result = m_http_client->Get(url_path.c_str());
+  const auto result = m_http_client.Get(url_path.c_str());
 
   if (result.error() != httplib::Error::Success || !result) {
     LOG("Failed to get {} from http storage: {} ({})",
         url_path,
         to_string(result.error()),
         result.error());
-    return nonstd::make_unexpected(Error::error);
+    return nonstd::make_unexpected(Failure::error);
   }
 
   if (result->status < 200 || result->status >= 300) {
@@ -129,22 +150,22 @@ HttpStorage::get(const Digest& key)
   return result->body;
 }
 
-nonstd::expected<bool, SecondaryStorage::Error>
-HttpStorage::put(const Digest& key,
-                 const std::string& value,
-                 const bool only_if_missing)
+nonstd::expected<bool, SecondaryStorage::Backend::Failure>
+HttpStorageBackend::put(const Digest& key,
+                        const std::string& value,
+                        const bool only_if_missing)
 {
   const auto url_path = get_entry_path(key);
 
   if (only_if_missing) {
-    const auto result = m_http_client->Head(url_path.c_str());
+    const auto result = m_http_client.Head(url_path.c_str());
 
     if (result.error() != httplib::Error::Success || !result) {
       LOG("Failed to check for {} in http storage: {} ({})",
           url_path,
           to_string(result.error()),
           result.error());
-      return nonstd::make_unexpected(Error::error);
+      return nonstd::make_unexpected(Failure::error);
     }
 
     if (result->status >= 200 && result->status < 300) {
@@ -156,7 +177,7 @@ HttpStorage::put(const Digest& key,
   }
 
   static const auto content_type = "application/octet-stream";
-  const auto result = m_http_client->Put(
+  const auto result = m_http_client.Put(
     url_path.c_str(), value.data(), value.size(), content_type);
 
   if (result.error() != httplib::Error::Success || !result) {
@@ -164,47 +185,65 @@ HttpStorage::put(const Digest& key,
         url_path,
         to_string(result.error()),
         result.error());
-    return nonstd::make_unexpected(Error::error);
+    return nonstd::make_unexpected(Failure::error);
   }
 
   if (result->status < 200 || result->status >= 300) {
     LOG("Failed to put {} to http storage: status code: {}",
         url_path,
         result->status);
-    return nonstd::make_unexpected(Error::error);
+    return nonstd::make_unexpected(Failure::error);
   }
 
   return true;
 }
 
-nonstd::expected<bool, SecondaryStorage::Error>
-HttpStorage::remove(const Digest& key)
+nonstd::expected<bool, SecondaryStorage::Backend::Failure>
+HttpStorageBackend::remove(const Digest& key)
 {
   const auto url_path = get_entry_path(key);
-  const auto result = m_http_client->Delete(url_path.c_str());
+  const auto result = m_http_client.Delete(url_path.c_str());
 
   if (result.error() != httplib::Error::Success || !result) {
     LOG("Failed to delete {} from http storage: {} ({})",
         url_path,
         to_string(result.error()),
         result.error());
-    return nonstd::make_unexpected(Error::error);
+    return nonstd::make_unexpected(Failure::error);
   }
 
   if (result->status < 200 || result->status >= 300) {
     LOG("Failed to delete {} from http storage: status code: {}",
         url_path,
         result->status);
-    return nonstd::make_unexpected(Error::error);
+    return nonstd::make_unexpected(Failure::error);
   }
 
   return true;
 }
 
 std::string
-HttpStorage::get_entry_path(const Digest& key) const
+HttpStorageBackend::get_entry_path(const Digest& key) const
 {
   return m_url_path + key.to_string();
+}
+
+} // namespace
+
+std::unique_ptr<SecondaryStorage::Backend>
+HttpStorage::create_backend(const Backend::Params& params) const
+{
+  return std::make_unique<HttpStorageBackend>(params);
+}
+
+void
+HttpStorage::redact_secrets(Backend::Params& params) const
+{
+  auto& url = params.url;
+  const auto user_info = util::split_once(url.user_info(), ':');
+  if (user_info.second) {
+    url.user_info(FMT("{}:{}", user_info.first, k_redacted_password));
+  }
 }
 
 } // namespace secondary

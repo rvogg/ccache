@@ -2,7 +2,7 @@ FROM ubuntu:18.04
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-        asciidoc \
+        asciidoctor \
         bash \
         build-essential \
         ccache \
@@ -12,8 +12,11 @@ RUN apt-get update \
         docbook-xsl \
         elfutils \
         gcc-multilib \
+        libhiredis-dev \
         libzstd-dev \
-        xsltproc \
+        python3 \
+        redis-server \
+        redis-tools \
  && rm -rf /var/lib/apt/lists/*
 
 # Redirect all compilers to ccache.

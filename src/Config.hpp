@@ -21,6 +21,8 @@
 #include "NonCopyable.hpp"
 #include "Util.hpp"
 
+#include <core/Sloppiness.hpp>
+
 #include "third_party/nonstd/optional.hpp"
 
 #include <cstdint>
@@ -75,7 +77,7 @@ public:
   bool recache() const;
   bool run_second_cpp() const;
   const std::string& secondary_storage() const;
-  uint32_t sloppiness() const;
+  core::Sloppiness sloppiness() const;
   bool stats() const;
   const std::string& stats_log() const;
   const std::string& temporary_dir() const;
@@ -83,11 +85,11 @@ public:
 
   void set_base_dir(const std::string& value);
   void set_cache_dir(const std::string& value);
-  void set_cpp_extension(const std::string& value);
   void set_compiler(const std::string& value);
   void set_compiler_type(CompilerType value);
-  void set_depend_mode(bool value);
+  void set_cpp_extension(const std::string& value);
   void set_debug(bool value);
+  void set_depend_mode(bool value);
   void set_direct_mode(bool value);
   void set_ignore_options(const std::string& value);
   void set_inode_cache(bool value);
@@ -123,9 +125,9 @@ public:
 
   void visit_items(const ItemVisitor& item_visitor) const;
 
-  static void set_value_in_file(const std::string& path,
-                                const std::string& key,
-                                const std::string& value);
+  void set_value_in_file(const std::string& path,
+                         const std::string& key,
+                         const std::string& value) const;
 
   // Called from unit tests.
   static void check_key_tables_consistency();
@@ -169,7 +171,7 @@ private:
   bool m_recache = false;
   bool m_run_second_cpp = true;
   std::string m_secondary_storage;
-  uint32_t m_sloppiness = 0;
+  core::Sloppiness m_sloppiness;
   bool m_stats = true;
   std::string m_stats_log;
   std::string m_temporary_dir;
@@ -398,7 +400,7 @@ Config::secondary_storage() const
   return m_secondary_storage;
 }
 
-inline uint32_t
+inline core::Sloppiness
 Config::sloppiness() const
 {
   return m_sloppiness;

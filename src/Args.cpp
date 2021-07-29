@@ -20,6 +20,9 @@
 
 #include "Util.hpp"
 
+#include <core/exceptions.hpp>
+#include <util/string.hpp>
+
 using nonstd::nullopt;
 using nonstd::optional;
 using nonstd::string_view;
@@ -52,7 +55,7 @@ Args::from_gcc_atfile(const std::string& filename)
   std::string argtext;
   try {
     argtext = Util::read_file(filename);
-  } catch (Error&) {
+  } catch (core::Error&) {
     return nullopt;
   }
 
@@ -170,7 +173,7 @@ Args::erase_with_prefix(string_view prefix)
   m_args.erase(std::remove_if(m_args.begin(),
                               m_args.end(),
                               [&prefix](const auto& s) {
-                                return Util::starts_with(s, prefix);
+                                return util::starts_with(s, prefix);
                               }),
                m_args.end());
 }

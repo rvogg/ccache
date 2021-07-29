@@ -18,8 +18,7 @@
 
 #pragma once
 
-#include "CacheFile.hpp"
-
+#include <Stat.hpp>
 #include <util/Tokenizer.hpp>
 
 #include "third_party/nonstd/optional.hpp"
@@ -39,9 +38,6 @@ class Context;
 namespace Util {
 
 using DataReceiver = std::function<void(const void* data, size_t size)>;
-using ProgressReceiver = std::function<void(double progress)>;
-using SubdirVisitor = std::function<void(
-  const std::string& dir_path, const ProgressReceiver& progress_receiver)>;
 using TraverseVisitor =
   std::function<void(const std::string& path, bool is_dir)>;
 
@@ -94,14 +90,15 @@ clamp(T value, T min, T max)
 }
 
 // Clone a file from `src` to `dest`. If `via_tmp_file` is true, `src` is cloned
-// to a temporary file and then renamed to `dest`. Throws `Error` on error.
+// to a temporary file and then renamed to `dest`. Throws `core::Error` on
+// error.
 void clone_file(const std::string& src,
                 const std::string& dest,
                 bool via_tmp_file = false);
 
 // Clone, hard link or copy a file from `source` to `dest` depending on settings
 // in `ctx`. If cloning or hard linking cannot and should not be done the file
-// will be copied instead. Throws `Error` on error.
+// will be copied instead. Throws `core::Error` on error.
 void clone_hard_link_or_copy_file(const Context& ctx,
                                   const std::string& source,
                                   const std::string& dest,
@@ -112,11 +109,11 @@ void clone_hard_link_or_copy_file(const Context& ctx,
 size_t common_dir_prefix_length(nonstd::string_view dir,
                                 nonstd::string_view path);
 
-// Copy all data from `fd_in` to `fd_out`. Throws `Error` on error.
+// Copy all data from `fd_in` to `fd_out`. Throws `core::Error` on error.
 void copy_fd(int fd_in, int fd_out);
 
 // Copy a file from `src` to `dest`. If via_tmp_file is true, `src` is copied to
-// a temporary file and then renamed to dest. Throws `Error` on error.
+// a temporary file and then renamed to dest. Throws `core::Error` on error.
 void copy_file(const std::string& src,
                const std::string& dest,
                bool via_tmp_file = false);
@@ -129,18 +126,11 @@ bool create_dir(nonstd::string_view dir);
 // Get directory name of path.
 nonstd::string_view dir_name(nonstd::string_view path);
 
-// Return true if `suffix` is a suffix of `string`.
-inline bool
-ends_with(nonstd::string_view string, nonstd::string_view suffix)
-{
-  return string.ends_with(suffix);
-}
-
 // Like create_dir but throws Fatal on error.
 void ensure_dir_exists(nonstd::string_view dir);
 
 // Expand all instances of $VAR or ${VAR}, where VAR is an environment variable,
-// in `str`. Throws `Error` if one of the environment variables.
+// in `str`. Throws `core::Error` if one of the environment variables.
 [[nodiscard]] std::string expand_environment_variables(const std::string& str);
 
 // Extends file size to at least new_size by calling posix_fallocate() if
@@ -151,17 +141,6 @@ void ensure_dir_exists(nonstd::string_view dir);
 //
 // Returns 0 on success, an error number otherwise.
 int fallocate(int fd, long new_size);
-
-// Call a function for each subdir (0-9a-f) in the cache.
-//
-// Parameters:
-// - cache_dir: Path to the cache directory.
-// - visitor: Function to call with directory path and progress_receiver as
-//   arguments.
-// - progress_receiver: Function that will be called for progress updates.
-void for_each_level_1_subdir(const std::string& cache_dir,
-                             const SubdirVisitor& visitor,
-                             const ProgressReceiver& progress_receiver);
 
 // Format `argv` as a simple string for logging purposes. That is, the result is
 // not intended to be machine parsable. `argv` must be terminated by a nullptr.
@@ -195,24 +174,6 @@ std::string get_apparent_cwd(const std::string& actual_cwd);
 // `path` has no file extension, an empty string_view is returned.
 nonstd::string_view get_extension(nonstd::string_view path);
 
-// Get a list of files in a level 1 subdirectory of the cache.
-//
-// The function works under the assumption that directory entries with one
-// character names (except ".") are subdirectories and that there are no other
-// subdirectories.
-//
-// Files ignored:
-// - CACHEDIR.TAG
-// - stats
-// - .nfs* (temporary NFS files that may be left for open but deleted files).
-//
-// Parameters:
-// - dir: The directory to traverse recursively.
-// - progress_receiver: Function that will be called for progress updates.
-std::vector<CacheFile>
-get_level_1_files(const std::string& dir,
-                  const ProgressReceiver& progress_receiver);
-
 // Return the current user's home directory, or throw `Fatal` if it can't
 // be determined.
 std::string get_home_directory();
@@ -227,14 +188,7 @@ const char* get_hostname();
 std::string get_relative_path(nonstd::string_view dir,
                               nonstd::string_view path);
 
-// Join `cache_dir`, a '/' and `name` into a single path and return it.
-// Additionally, `level` single-character, '/'-separated subpaths are split from
-// the beginning of `name` before joining them all.
-std::string get_path_in_cache(nonstd::string_view cache_dir,
-                              uint8_t level,
-                              nonstd::string_view name);
-
-// Hard-link `oldpath` to `newpath`. Throws `Error` on error.
+// Hard-link `oldpath` to `newpath`. Throws `core::Error` on error.
 void hard_link(const std::string& oldpath, const std::string& newpath);
 
 // Write bytes in big endian order from an integer value.
@@ -319,36 +273,13 @@ bool matches_dir_prefix_or_file(nonstd::string_view dir_prefix_or_file,
 std::string normalize_absolute_path(nonstd::string_view path);
 
 // Parse `duration`, an unsigned integer with d (days) or s (seconds) suffix,
-// into seconds. Throws `Error` on error.
+// into seconds. Throws `core::Error` on error.
 uint64_t parse_duration(const std::string& duration);
-
-// Parse a string into a signed integer.
-//
-// Throws `Error` if `value` cannot be parsed as an int64_t or if the value
-// falls out of the range [`min_value`, `max_value`]. `min_value` and
-// `max_value` default to min and max values of int64_t. `description` is
-// included in the error message for range violations.
-int64_t parse_signed(const std::string& value,
-                     nonstd::optional<int64_t> min_value = nonstd::nullopt,
-                     nonstd::optional<int64_t> max_value = nonstd::nullopt,
-                     nonstd::string_view description = "integer");
 
 // Parse a "size value", i.e. a string that can end in k, M, G, T (10-based
 // suffixes) or Ki, Mi, Gi, Ti (2-based suffixes). For backward compatibility, K
-// is also recognized as a synonym of k. Throws `Error` on parse error.
+// is also recognized as a synonym of k. Throws `core::Error` on parse error.
 uint64_t parse_size(const std::string& value);
-
-// Parse a string into an unsigned integer.
-//
-// Throws `Error` if `value` cannot be parsed as an uint64_t with base `base`,
-// or if the value falls out of the range [`min_value`, `max_value`].
-// `min_value` and `max_value` default to min and max values of uint64_t.
-// `description` is included in the error message for range violations.
-uint64_t parse_unsigned(const std::string& value,
-                        nonstd::optional<uint64_t> min_value = nonstd::nullopt,
-                        nonstd::optional<uint64_t> max_value = nonstd::nullopt,
-                        nonstd::string_view description = "integer",
-                        int base = 10);
 
 // Read data from `fd` until end of file and call `data_receiver` with the read
 // data. Returns whether reading was successful, i.e. whether the read(2) call
@@ -358,8 +289,8 @@ bool read_fd(int fd, DataReceiver data_receiver);
 // Return `path`'s content as a string. If `size_hint` is not 0 then assume that
 // `path` has this size (this saves system calls).
 //
-// Throws `Error` on error. The description contains the error message without
-// the path.
+// Throws `core::Error` on error. The description contains the error message
+// without the path.
 std::string read_file(const std::string& path, size_t size_hint = 0);
 
 #ifndef _WIN32
@@ -377,7 +308,8 @@ std::string real_path(const std::string& path,
 // extension as determined by `get_extension()`.
 nonstd::string_view remove_extension(nonstd::string_view path);
 
-// Rename `oldpath` to `newpath` (deleting `newpath`). Throws `Error` on error.
+// Rename `oldpath` to `newpath` (deleting `newpath`). Throws `core::Error` on
+// error.
 void rename(const std::string& oldpath, const std::string& newpath);
 
 // Detmine if `program_name` is equal to `canonical_program_name`. On Windows,
@@ -388,8 +320,8 @@ bool same_program_name(nonstd::string_view program_name,
 
 // Send `text` to STDERR_FILENO, optionally stripping ANSI color sequences if
 // `ctx.args_info.strip_diagnostics_colors` is true and rewriting paths to
-// absolute if `ctx.config.absolute_paths_in_stderr` is true. Throws `Error` on
-// error.
+// absolute if `ctx.config.absolute_paths_in_stderr` is true. Throws
+// `core::Error` on error.
 void send_to_stderr(const Context& ctx, const std::string& text);
 
 // Set the FD_CLOEXEC on file descriptor `fd`. This is a NOP on Windows.
@@ -421,27 +353,8 @@ std::vector<std::string> split_into_strings(
   const char* separators,
   util::Tokenizer::Mode mode = util::Tokenizer::Mode::skip_empty);
 
-// Return true if `prefix` is a prefix of `string`.
-inline bool
-starts_with(const char* string, nonstd::string_view prefix)
-{
-  // Optimized version of starts_with(string_view, string_view): avoid computing
-  // the length of the string argument.
-  return strncmp(string, prefix.data(), prefix.length()) == 0;
-}
-
-// Return true if `prefix` is a prefix of `string`.
-inline bool
-starts_with(nonstd::string_view string, nonstd::string_view prefix)
-{
-  return string.starts_with(prefix);
-}
-
 // Returns a copy of string with the specified ANSI CSI sequences removed.
 [[nodiscard]] std::string strip_ansi_csi_seqs(nonstd::string_view string);
-
-// Strip whitespace from left and right side of a string.
-[[nodiscard]] std::string strip_whitespace(nonstd::string_view string);
 
 // Convert a string to lowercase.
 [[nodiscard]] std::string to_lowercase(nonstd::string_view string);
@@ -449,7 +362,7 @@ starts_with(nonstd::string_view string, nonstd::string_view prefix)
 // Traverse `path` recursively (postorder, i.e. files are visited before their
 // parent directory).
 //
-// Throws Error on error.
+// Throws core::Error on error.
 void traverse(const std::string& path, const TraverseVisitor& visitor);
 
 // Remove `path` (non-directory), NFS safe. Logs according to `unlink_log`.
@@ -476,18 +389,18 @@ void update_mtime(const std::string& path);
 // Remove `path` (and its contents if it's a directory). A nonexistent path is
 // not considered an error.
 //
-// Throws Error on error.
+// Throws core::Error on error.
 void wipe_path(const std::string& path);
 
-// Write `size` bytes from `data` to `fd`. Throws `Error` on error.
+// Write `size` bytes from `data` to `fd`. Throws `core::Error` on error.
 void write_fd(int fd, const void* data, size_t size);
 
 // Write `data` to `path`. The file will be opened according to `open_mode`,
 // which always will include `std::ios::out` even if not specified at the call
 // site.
 //
-// Throws `Error` on error. The description contains the error message without
-// the path.
+// Throws `core::Error` on error. The description contains the error message
+// without the path.
 void write_file(const std::string& path,
                 const std::string& data,
                 std::ios_base::openmode open_mode = std::ios::binary);

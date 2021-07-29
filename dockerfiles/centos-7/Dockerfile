@@ -3,7 +3,7 @@ FROM centos:7
 RUN yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm \
  && yum install -y centos-release-scl \
  && yum install -y \
-        asciidoc \
+        asciidoctor \
         autoconf \
         bash \
         ccache \
@@ -15,8 +15,7 @@ RUN yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
         gcc-c++ \
         libzstd-devel \
         make \
-# Remove superfluous dependencies brought in by asciidoc:
- && rpm -e --nodeps graphviz \
+        python3 \
  && yum autoremove -y \
  && yum clean all \
  && cp /usr/bin/cmake3 /usr/bin/cmake \

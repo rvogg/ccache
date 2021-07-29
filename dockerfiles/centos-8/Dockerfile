@@ -4,7 +4,7 @@ FROM centos:8
 RUN dnf install -y epel-release \
  && dnf update -y \
  && dnf install -y \
-        asciidoc \
+        asciidoctor \
         autoconf \
         bash \
         ccache \
@@ -14,6 +14,9 @@ RUN dnf install -y epel-release \
         elfutils \
         gcc \
         gcc-c++ \
+        hiredis-devel \
         libzstd-devel \
         make \
+        python3 \
+        redis \
  && dnf clean all

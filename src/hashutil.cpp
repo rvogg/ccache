@@ -23,14 +23,16 @@
 #include "Context.hpp"
 #include "Hash.hpp"
 #include "Logging.hpp"
-#include "Sloppiness.hpp"
 #include "Stat.hpp"
+#include "Util.hpp"
 #include "Win32Util.hpp"
 #include "execute.hpp"
 #include "fmtmacros.hpp"
 #include "macroskip.hpp"
 
+#include <core/exceptions.hpp>
 #include <core/wincompat.hpp>
+#include <util/string.hpp>
 
 #ifdef INODE_CACHE_SUPPORTED
 #  include "InodeCache.hpp"
@@ -187,7 +189,7 @@ hash_source_code_file_nocache(const Context& ctx,
     std::string data;
     try {
       data = Util::read_file(path, size_hint);
-    } catch (Error&) {
+    } catch (core::Error&) {
       return HASH_SOURCE_CODE_ERROR;
     }
     int result = hash_source_code_string(ctx, hash, data, path);
@@ -202,7 +204,7 @@ get_content_type(const Config& config, const std::string& path)
   if (Util::is_precompiled_header(path)) {
     return InodeCache::ContentType::precompiled_header;
   }
-  if (config.sloppiness() & SLOPPY_TIME_MACROS) {
+  if (config.sloppiness().is_enabled(core::Sloppy::time_macros)) {
     return InodeCache::ContentType::code_with_sloppy_time_macros;
   }
   return InodeCache::ContentType::code;
@@ -232,7 +234,7 @@ hash_source_code_string(const Context& ctx,
 
   // Check for __DATE__, __TIME__ and __TIMESTAMP__if the sloppiness
   // configuration tells us we should.
-  if (!(ctx.config.sloppiness() & SLOPPY_TIME_MACROS)) {
+  if (!(ctx.config.sloppiness().is_enabled(core::Sloppy::time_macros))) {
     result |= check_for_temporal_macros(str);
   }
 
@@ -374,14 +376,14 @@ hash_command_output(Hash& hash,
                     const std::string& compiler)
 {
 #ifdef _WIN32
-  std::string adjusted_command = Util::strip_whitespace(command);
+  std::string adjusted_command = util::strip_whitespace(command);
 
   // Add "echo" command.
   bool using_cmd_exe;
-  if (Util::starts_with(adjusted_command, "echo")) {
+  if (util::starts_with(adjusted_command, "echo")) {
     adjusted_command = FMT("cmd.exe /c \"{}\"", adjusted_command);
     using_cmd_exe = true;
-  } else if (Util::starts_with(adjusted_command, "%compiler%")
+  } else if (util::starts_with(adjusted_command, "%compiler%")
              && compiler == "echo") {
     adjusted_command =
       FMT("cmd.exe /c \"{}{}\"", compiler, adjusted_command.substr(10));
@@ -469,12 +471,12 @@ hash_command_output(Hash& hash,
 #else
   int pipefd[2];
   if (pipe(pipefd) == -1) {
-    throw Fatal("pipe failed: {}", strerror(errno));
+    throw core::Fatal("pipe failed: {}", strerror(errno));
   }
 
   pid_t pid = fork();
   if (pid == -1) {
-    throw Fatal("fork failed: {}", strerror(errno));
+    throw core::Fatal("fork failed: {}", strerror(errno));
   }
 
   if (pid == 0) {

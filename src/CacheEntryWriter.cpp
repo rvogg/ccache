@@ -18,15 +18,17 @@
 
 #include "CacheEntryWriter.hpp"
 
+#include <core/exceptions.hpp>
+
 CacheEntryWriter::CacheEntryWriter(FILE* stream,
                                    const uint8_t* magic,
                                    uint8_t version,
-                                   Compression::Type compression_type,
+                                   compression::Type compression_type,
                                    int8_t compression_level,
                                    uint64_t payload_size)
   // clang-format off
-  : m_compressor(
-      Compressor::create_from_type(compression_type, stream, compression_level))
+  : m_compressor(compression::Compressor::create_from_type(
+                   compression_type, stream, compression_level))
 // clang-format on
 {
   uint8_t header_bytes[15];
@@ -37,7 +39,7 @@ CacheEntryWriter::CacheEntryWriter(FILE* stream,
   uint64_t content_size = 15 + payload_size + 8;
   Util::int_to_big_endian(content_size, header_bytes + 7);
   if (fwrite(header_bytes, sizeof(header_bytes), 1, stream) != 1) {
-    throw Error("Failed to write cache entry header");
+    throw core::Error("Failed to write cache entry header");
   }
   m_checksum.update(header_bytes, sizeof(header_bytes));
 }

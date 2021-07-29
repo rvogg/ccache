@@ -18,41 +18,18 @@
 
 #pragma once
 
-#include "storage/SecondaryStorage.hpp"
-#include "storage/types.hpp"
-
-#include <third_party/url.hpp>
-
-struct redisContext;
+#include <storage/secondary/SecondaryStorage.hpp>
 
 namespace storage {
 namespace secondary {
 
-class RedisStorage : public storage::SecondaryStorage
+class RedisStorage : public SecondaryStorage
 {
 public:
-  RedisStorage(const Url& url, const AttributeMap& attributes);
-  ~RedisStorage();
+  std::unique_ptr<Backend>
+  create_backend(const Backend::Params& params) const override;
 
-  nonstd::expected<nonstd::optional<std::string>, Error>
-  get(const Digest& key) override;
-  nonstd::expected<bool, Error> put(const Digest& key,
-                                    const std::string& value,
-                                    bool only_if_missing) override;
-  nonstd::expected<bool, Error> remove(const Digest& key) override;
-
-private:
-  Url m_url;
-  std::string m_prefix;
-  redisContext* m_context;
-  const uint64_t m_connect_timeout;
-  const uint64_t m_operation_timeout;
-  bool m_connected;
-  bool m_invalid;
-
-  int connect();
-  int auth();
-  std::string get_key_string(const Digest& digest) const;
+  void redact_secrets(Backend::Params& params) const override;
 };
 
 } // namespace secondary

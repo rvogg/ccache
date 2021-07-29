@@ -21,12 +21,10 @@
 #include "Args.hpp"
 #include "ArgsInfo.hpp"
 #include "Config.hpp"
-#include "Counters.hpp"
 #include "Digest.hpp"
 #include "File.hpp"
 #include "MiniTrace.hpp"
 #include "NonCopyable.hpp"
-#include "Sloppiness.hpp"
 
 #ifdef INODE_CACHE_SUPPORTED
 #  include "InodeCache.hpp"

@@ -28,9 +28,10 @@
 #include "File.hpp"
 #include "Hash.hpp"
 #include "Logging.hpp"
-#include "Sloppiness.hpp"
 #include "fmtmacros.hpp"
 #include "hashutil.hpp"
+
+#include <core/exceptions.hpp>
 
 #include <memory>
 
@@ -380,8 +381,8 @@ write_manifest(const Config& config,
   CacheEntryWriter writer(atomic_manifest_file.stream(),
                           Manifest::k_magic,
                           Manifest::k_version,
-                          Compression::type_from_config(config),
-                          Compression::level_from_config(config),
+                          compression::type_from_config(config),
+                          compression::level_from_config(config),
                           payload_size);
   writer.write<uint32_t>(mf.files.size());
   for (const auto& file : mf.files) {
@@ -451,8 +452,9 @@ verify_result(const Context& ctx,
       return false;
     }
 
-    if (ctx.config.sloppiness() & SLOPPY_FILE_STAT_MATCHES) {
-      if (!(ctx.config.sloppiness() & SLOPPY_FILE_STAT_MATCHES_CTIME)) {
+    if (ctx.config.sloppiness().is_enabled(core::Sloppy::file_stat_matches)) {
+      if (!(ctx.config.sloppiness().is_enabled(
+            core::Sloppy::file_stat_matches_ctime))) {
         if (fi.mtime == fs.mtime && fi.ctime == fs.ctime) {
           LOG("mtime/ctime hit for {}", path);
           continue;
@@ -512,7 +514,7 @@ get(const Context& ctx, const std::string& path)
       LOG_RAW("No such manifest file");
       return nullopt;
     }
-  } catch (const Error& e) {
+  } catch (const core::Error& e) {
     LOG("Error: {}", e.what());
     return nullopt;
   }
@@ -553,7 +555,7 @@ put(const Config& config,
       // Manifest file didn't exist.
       mf = std::make_unique<ManifestData>();
     }
-  } catch (const Error& e) {
+  } catch (const core::Error& e) {
     LOG("Error: {}", e.what());
     // Manifest file was corrupt, ignore.
     mf = std::make_unique<ManifestData>();
@@ -589,7 +591,7 @@ put(const Config& config,
     try {
       write_manifest(config, path, *mf);
       return true;
-    } catch (const Error& e) {
+    } catch (const core::Error& e) {
       LOG("Error: {}", e.what());
     }
   } else {
@@ -604,7 +606,7 @@ dump(const std::string& path, FILE* stream)
   std::unique_ptr<ManifestData> mf;
   try {
     mf = read_manifest(path, stream);
-  } catch (const Error& e) {
+  } catch (const core::Error& e) {
     PRINT(stream, "Error: {}\n", e.what());
     return false;
   }

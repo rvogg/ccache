@@ -19,7 +19,6 @@
 #include "argprocessing.hpp"
 
 #include "Context.hpp"
-#include "FormatNonstdStringView.hpp"
 #include "Logging.hpp"
 #include "assertions.hpp"
 #include "compopt.hpp"
@@ -27,6 +26,7 @@
 #include "language.hpp"
 
 #include <core/wincompat.hpp>
+#include <util/string.hpp>
 
 #ifdef HAVE_UNISTD_H
 #  include <unistd.h>
@@ -34,6 +34,7 @@
 
 #include <cassert>
 
+using core::Statistic;
 using nonstd::nullopt;
 using nonstd::optional;
 using nonstd::string_view;
@@ -164,7 +165,7 @@ process_profiling_option(Context& ctx, const std::string& arg)
   std::string new_profile_path;
   bool new_profile_use = false;
 
-  if (Util::starts_with(arg, "-fprofile-dir=")) {
+  if (util::starts_with(arg, "-fprofile-dir=")) {
     new_profile_path = arg.substr(arg.find('=') + 1);
   } else if (arg == "-fprofile-generate" || arg == "-fprofile-instr-generate") {
     ctx.args_info.profile_generate = true;
@@ -174,8 +175,8 @@ process_profiling_option(Context& ctx, const std::string& arg)
       // GCC uses $PWD/$(basename $obj).
       new_profile_path = ctx.apparent_cwd;
     }
-  } else if (Util::starts_with(arg, "-fprofile-generate=")
-             || Util::starts_with(arg, "-fprofile-instr-generate=")) {
+  } else if (util::starts_with(arg, "-fprofile-generate=")
+             || util::starts_with(arg, "-fprofile-instr-generate=")) {
     ctx.args_info.profile_generate = true;
     new_profile_path = arg.substr(arg.find('=') + 1);
   } else if (arg == "-fprofile-use" || arg == "-fprofile-instr-use"
@@ -185,10 +186,10 @@ process_profiling_option(Context& ctx, const std::string& arg)
     if (ctx.args_info.profile_path.empty()) {
       new_profile_path = ".";
     }
-  } else if (Util::starts_with(arg, "-fprofile-use=")
-             || Util::starts_with(arg, "-fprofile-instr-use=")
-             || Util::starts_with(arg, "-fprofile-sample-use=")
-             || Util::starts_with(arg, "-fauto-profile=")) {
+  } else if (util::starts_with(arg, "-fprofile-use=")
+             || util::starts_with(arg, "-fprofile-instr-use=")
+             || util::starts_with(arg, "-fprofile-sample-use=")
+             || util::starts_with(arg, "-fauto-profile=")) {
     new_profile_use = true;
     new_profile_path = arg.substr(arg.find('=') + 1);
   } else {
@@ -242,7 +243,7 @@ process_arg(Context& ctx,
 
   // Ignore clang -ivfsoverlay <arg> to not detect multiple input files.
   if (args[i] == "-ivfsoverlay"
-      && !(config.sloppiness() & SLOPPY_IVFSOVERLAY)) {
+      && !(config.sloppiness().is_enabled(core::Sloppy::ivfsoverlay))) {
     LOG_RAW(
       "You have to specify \"ivfsoverlay\" sloppiness when using"
       " -ivfsoverlay to get hits");
@@ -255,7 +256,7 @@ process_arg(Context& ctx,
   }
 
   // Handle "@file" argument.
-  if (Util::starts_with(args[i], "@") || Util::starts_with(args[i], "-@")) {
+  if (util::starts_with(args[i], "@") || util::starts_with(args[i], "-@")) {
     const char* argpath = args[i].c_str() + 1;
 
     if (argpath[-1] == '-') {
@@ -297,8 +298,8 @@ process_arg(Context& ctx,
   }
 
   // These are always too hard.
-  if (compopt_too_hard(args[i]) || Util::starts_with(args[i], "-fdump-")
-      || Util::starts_with(args[i], "-MJ")) {
+  if (compopt_too_hard(args[i]) || util::starts_with(args[i], "-fdump-")
+      || util::starts_with(args[i], "-MJ")) {
     LOG("Compiler option {} is unsupported", args[i]);
     return Statistic::unsupported_compiler_option;
   }
@@ -310,7 +311,7 @@ process_arg(Context& ctx,
   }
 
   // -Xarch_* options are too hard.
-  if (Util::starts_with(args[i], "-Xarch_")) {
+  if (util::starts_with(args[i], "-Xarch_")) {
     if (i == args.size() - 1) {
       LOG("Missing argument to {}", args[i]);
       return Statistic::bad_compiler_arguments;
@@ -387,7 +388,7 @@ process_arg(Context& ctx,
       LOG("Compiler option {} is unsupported without direct depend mode",
           args[i]);
       return Statistic::could_not_use_modules;
-    } else if (!(config.sloppiness() & SLOPPY_MODULES)) {
+    } else if (!(config.sloppiness().is_enabled(core::Sloppy::modules))) {
       LOG_RAW(
         "You have to specify \"modules\" sloppiness when using"
         " -fmodules to get hits");
@@ -423,7 +424,7 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-x")) {
+  if (util::starts_with(args[i], "-x")) {
     if (args[i].length() >= 3 && !islower(args[i][2])) {
       // -xCODE (where CODE can be e.g. Host or CORE-AVX2, always starting with
       // an uppercase letter) is an ordinary Intel compiler option, not a
@@ -466,15 +467,15 @@ process_arg(Context& ctx,
   }
 
   // Alternate form of -o with no space. Nvcc does not support this.
-  if (Util::starts_with(args[i], "-o")
+  if (util::starts_with(args[i], "-o")
       && config.compiler_type() != CompilerType::nvcc) {
     args_info.output_obj =
       Util::make_relative_path(ctx, string_view(args[i]).substr(2));
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-fdebug-prefix-map=")
-      || Util::starts_with(args[i], "-ffile-prefix-map=")) {
+  if (util::starts_with(args[i], "-fdebug-prefix-map=")
+      || util::starts_with(args[i], "-ffile-prefix-map=")) {
     std::string map = args[i].substr(args[i].find('=') + 1);
     args_info.debug_prefix_maps.push_back(map);
     state.common_args.push_back(args[i]);
@@ -483,17 +484,17 @@ process_arg(Context& ctx,
 
   // Debugging is handled specially, so that we know if we can strip line
   // number info.
-  if (Util::starts_with(args[i], "-g")) {
+  if (util::starts_with(args[i], "-g")) {
     state.common_args.push_back(args[i]);
 
-    if (Util::starts_with(args[i], "-gdwarf")) {
+    if (util::starts_with(args[i], "-gdwarf")) {
       // Selection of DWARF format (-gdwarf or -gdwarf-<version>) enables
       // debug info on level 2.
       args_info.generating_debuginfo = true;
       return nullopt;
     }
 
-    if (Util::starts_with(args[i], "-gz")) {
+    if (util::starts_with(args[i], "-gz")) {
       // -gz[=type] neither disables nor enables debug info.
       return nullopt;
     }
@@ -525,7 +526,7 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-MF")) {
+  if (util::starts_with(args[i], "-MF")) {
     state.dependency_filename_specified = true;
 
     std::string dep_file;
@@ -553,7 +554,7 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-MQ") || Util::starts_with(args[i], "-MT")) {
+  if (util::starts_with(args[i], "-MQ") || util::starts_with(args[i], "-MT")) {
     ctx.args_info.dependency_target_specified = true;
 
     if (args[i].size() == 3) {
@@ -607,8 +608,8 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-fprofile-")
-      || Util::starts_with(args[i], "-fauto-profile")
+  if (util::starts_with(args[i], "-fprofile-")
+      || util::starts_with(args[i], "-fauto-profile")
       || args[i] == "-fbranch-probabilities") {
     if (!process_profiling_option(ctx, args[i])) {
       // The failure is logged by process_profiling_option.
@@ -618,13 +619,13 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-fsanitize-blacklist=")) {
+  if (util::starts_with(args[i], "-fsanitize-blacklist=")) {
     args_info.sanitize_blacklists.emplace_back(args[i].substr(21));
     state.common_args.push_back(args[i]);
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "--sysroot=")) {
+  if (util::starts_with(args[i], "--sysroot=")) {
     auto path = string_view(args[i]).substr(10);
     auto relpath = Util::make_relative_path(ctx, path);
     state.common_args.push_back("--sysroot=" + relpath);
@@ -665,12 +666,12 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (Util::starts_with(args[i], "-Wp,")) {
+  if (util::starts_with(args[i], "-Wp,")) {
     if (args[i].find(",-P,") != std::string::npos
-        || Util::ends_with(args[i], ",-P")) {
+        || util::ends_with(args[i], ",-P")) {
       // -P together with other preprocessor options is just too hard.
       return Statistic::unsupported_compiler_option;
-    } else if (Util::starts_with(args[i], "-Wp,-MD,")
+    } else if (util::starts_with(args[i], "-Wp,-MD,")
                && args[i].find(',', 8) == std::string::npos) {
       args_info.generating_dependencies = true;
       state.dependency_filename_specified = true;
@@ -678,7 +679,7 @@ process_arg(Context& ctx,
         Util::make_relative_path(ctx, string_view(args[i]).substr(8));
       state.dep_args.push_back(args[i]);
       return nullopt;
-    } else if (Util::starts_with(args[i], "-Wp,-MMD,")
+    } else if (util::starts_with(args[i], "-Wp,-MMD,")
                && args[i].find(',', 9) == std::string::npos) {
       args_info.generating_dependencies = true;
       state.dependency_filename_specified = true;
@@ -686,13 +687,13 @@ process_arg(Context& ctx,
         Util::make_relative_path(ctx, string_view(args[i]).substr(9));
       state.dep_args.push_back(args[i]);
       return nullopt;
-    } else if (Util::starts_with(args[i], "-Wp,-D")
+    } else if (util::starts_with(args[i], "-Wp,-D")
                && args[i].find(',', 6) == std::string::npos) {
       // Treat it like -D.
       state.cpp_args.push_back(args[i].substr(4));
       return nullopt;
     } else if (args[i] == "-Wp,-MP"
-               || (args[i].size() > 8 && Util::starts_with(args[i], "-Wp,-M")
+               || (args[i].size() > 8 && util::starts_with(args[i], "-Wp,-M")
                    && args[i][7] == ','
                    && (args[i][6] == 'F' || args[i][6] == 'Q'
                        || args[i][6] == 'T')
@@ -718,7 +719,7 @@ process_arg(Context& ctx,
   }
 
   // Input charset needs to be handled specially.
-  if (Util::starts_with(args[i], "-finput-charset=")) {
+  if (util::starts_with(args[i], "-finput-charset=")) {
     state.input_charset_option = args[i];
     return nullopt;
   }
@@ -797,7 +798,7 @@ process_arg(Context& ctx,
     return nullopt;
   }
 
-  if (config.sloppiness() & SLOPPY_CLANG_INDEX_STORE
+  if (config.sloppiness().is_enabled(core::Sloppy::clang_index_store)
       && args[i] == "-index-store-path") {
     // Xcode 9 or later calls Clang with this option. The given path includes a
     // UUID that might lead to cache misses, especially when cache is shared
@@ -1070,7 +1071,7 @@ process_args(Context& ctx)
 
   if (state.found_pch || state.found_fpch_preprocess) {
     args_info.using_precompiled_header = true;
-    if (!(config.sloppiness() & SLOPPY_TIME_MACROS)) {
+    if (!(config.sloppiness().is_enabled(core::Sloppy::time_macros))) {
       LOG_RAW(
         "You have to specify \"time_macros\" sloppiness when using"
         " precompiled headers to get direct hits");
@@ -1106,7 +1107,7 @@ process_args(Context& ctx)
   }
 
   if (args_info.output_is_precompiled_header
-      && !(config.sloppiness() & SLOPPY_PCH_DEFINES)) {
+      && !(config.sloppiness().is_enabled(core::Sloppy::pch_defines))) {
     LOG_RAW(
       "You have to specify \"pch_defines,time_macros\" sloppiness when"
       " creating precompiled headers");

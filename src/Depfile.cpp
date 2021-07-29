@@ -23,7 +23,8 @@
 #include "Logging.hpp"
 #include "assertions.hpp"
 
-#include <util/path_utils.hpp>
+#include <core/exceptions.hpp>
+#include <util/path.hpp>
 
 static inline bool
 is_blank(const std::string& s)
@@ -123,7 +124,7 @@ make_paths_relative_in_output_dep(const Context& ctx)
   std::string file_content;
   try {
     file_content = Util::read_file(output_dep);
-  } catch (const Error& e) {
+  } catch (const core::Error& e) {
     LOG("Cannot open dependency file {}: {}", output_dep, e.what());
     return;
   }
