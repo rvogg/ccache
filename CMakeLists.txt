@@ -56,17 +56,17 @@ endif()
 #
 include(CcacheVersion)
 
-if("${CCACHE_VERSION_ORIGIN}" STREQUAL git OR DEFINED ENV{CI})
-  set(CCACHE_DEV_MODE ON)
-else()
-  set(CCACHE_DEV_MODE OFF)
+if(NOT DEFINED CCACHE_DEV_MODE)
+  if("${CCACHE_VERSION_ORIGIN}" STREQUAL git OR DEFINED ENV{CI})
+    set(CCACHE_DEV_MODE ON)
+  else()
+    set(CCACHE_DEV_MODE OFF)
+  endif()
 endif()
 message(STATUS "Ccache dev mode: ${CCACHE_DEV_MODE}")
 
 include(UseCcache)
-if(NOT MSVC)
-  include(UseFastestLinker)
-endif()
+include(UseFastestLinker)
 include(StandardSettings)
 include(StandardWarnings)
 include(CIBuildType)
@@ -127,7 +127,7 @@ add_subdirectory(src)
 # ccache executable
 #
 add_executable(ccache src/main.cpp)
-target_link_libraries(ccache PRIVATE standard_settings standard_warnings ccache_lib)
+target_link_libraries(ccache PRIVATE standard_settings standard_warnings ccache_framework)
 
 #
 # Documentation
