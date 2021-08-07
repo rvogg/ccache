@@ -70,6 +70,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <memory>
 
@@ -237,6 +238,8 @@ guess_compiler(string_view path)
     return CompilerType::nvcc;
   } else if (name == "pump" || name == "distcc-pump") {
     return CompilerType::pump;
+  } else if (name.find("cl") != nonstd::string_view::npos) {
+    return CompilerType::cl;
   } else {
     return CompilerType::other;
   }
@@ -853,8 +856,12 @@ to_cache(Context& ctx,
          const Args& depend_extra_args,
          Hash* depend_mode_hash)
 {
-  args.push_back("-o");
-  args.push_back(ctx.args_info.output_obj);
+  if (ctx.config.compiler_type() == CompilerType::cl) {
+    args.push_back(FMT("-Fo{}", ctx.args_info.output_obj.c_str()));
+  } else {
+    args.push_back("-o");
+    args.push_back(ctx.args_info.output_obj);
+  }
 
   if (ctx.config.hard_link() && ctx.args_info.output_obj != "/dev/null") {
     // Workaround for Clang bug where it overwrites an existing object file
@@ -933,9 +940,64 @@ to_cache(Context& ctx,
     return nonstd::make_unexpected(Statistic::missing_cache_file);
   }
 
+  // MSVC compiler always print the input file name to stdout,
+  // plus parts of the warnings/error messages.
+  // So we have to fusion that into stderr...
+  // Transform \r\n into \n. This way ninja won't produce empty newlines
+  // for the /showIncludes argument.
+  if (ctx.config.compiler_type() == CompilerType::cl) {
+    const std::string tmp_stderr2 = FMT("{}.2", tmp_stderr_path);
+    Util::rename(tmp_stderr_path, tmp_stderr2);
+
+    std::ofstream result_stream;
+
+    std::vector<char> output_buffer(CCACHE_READ_BUFFER_SIZE);
+    result_stream.rdbuf()->pubsetbuf(output_buffer.data(),
+                                     output_buffer.size());
+
+    result_stream.open(tmp_stderr_path, std::ios_base::binary);
+    if (!result_stream.is_open()) {
+      LOG("Failed opening {}: {}", tmp_stderr_path, strerror(errno));
+      throw Failure(Statistic::no_input_file);
+    }
+
+    std::ostreambuf_iterator<char> to(result_stream);
+    for (auto& file : {tmp_stdout_path, tmp_stderr2}) {
+      std::ifstream file_stream;
+
+      std::vector<char> read_buffer(CCACHE_READ_BUFFER_SIZE);
+      file_stream.rdbuf()->pubsetbuf(read_buffer.data(), read_buffer.size());
+
+      file_stream.open(file, std::ios_base::binary);
+      if (!file_stream.is_open()) {
+        LOG("Failed opening {}: {}", file, strerror(errno));
+        throw Failure(Statistic::no_input_file);
+      }
+
+      std::istreambuf_iterator<char> from(file_stream);
+      for (; from != std::istreambuf_iterator<char>(); ++from, ++to) {
+        if (*from != '\r') {
+          *to = *from;
+        } else if (++from != std::istreambuf_iterator<char>()) {
+          *to = (*from == '\n') ? '\n' : '\r';
+        }
+      }
+    }
+
+    result_stream.close();
+    if (!result_stream.good()) {
+      LOG(
+        "Failed at writing data into {}: {}", tmp_stderr_path, strerror(errno));
+      throw Failure(Statistic::bad_output_file);
+    }
+
+    Util::unlink_tmp(tmp_stderr2);
+  }
+
   // distcc-pump outputs lines like this:
   // __________Using # distcc servers in pump mode
-  if (st.size() != 0 && ctx.config.compiler_type() != CompilerType::pump) {
+  if (st.size() != 0 && ctx.config.compiler_type() != CompilerType::pump
+      && ctx.config.compiler_type() != CompilerType::cl) {
     LOG_RAW("Compiler produced stdout");
     return nonstd::make_unexpected(Statistic::compiler_produced_stdout);
   }
