@@ -32,8 +32,8 @@ jobs:
           CXX: cl
         run: |
           rc=0
-          echo ${GITHUB_SHA} > build/version.txt
           ci/build || rc=$?
+          echo ${GITHUB_SHA} > build/version.txt
           echo "::set-output name=exit_status::$rc"
           exit $rc
 
