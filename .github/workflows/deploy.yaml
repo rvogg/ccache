@@ -1,0 +1,43 @@
+name: deploy-ccache
+on:
+  push:
+  pull_request:
+
+env:
+  VERBOSE: 1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy-win64:
+    name: deploy-win64
+    runs-on: windows-2019
+    steps:
+      - name: Get source
+        uses: actions/checkout@v2
+
+      - name: Prepare Windows environment (Visual Studio)
+        uses: ilammy/msvc-dev-cmd@v1.5.0
+        with:
+          arch: x64
+
+      - name: Build and test
+        id: build-and-test
+        env:
+          CC: cl
+          CMAKE_GENERATOR: Ninja
+          CMAKE_PARAMS: -DCMAKE_BUILD_TYPE=Release -DZSTD_FROM_INTERNET=ON -DHIREDIS_FROM_INTERNET=ON -DENABLE_TESTING=OFF
+          CXX: cl
+        run: |
+          ci/build
+          echo ${GITHUB_SHA} > build/version.txt
+
+      - name: archive
+        uses: actions/upload-artifact@v2
+        with:
+          name: ccache-win64
+          path: |
+            build/ccache.exe
+            build/version.txt
